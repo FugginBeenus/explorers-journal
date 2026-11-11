@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "ejtest",
+  "version": "1",
+  "name": "Explorer's Journal test script",
+  "environment": "*",
+  "entrypoints": {
+    "client": ["com.fugginbeenus.explorersjournal.test.ClientScript"],
+    "server": ["com.fugginbeenus.explorersjournal.test.ServerScript"]
+  },
+  "mixins": ["ejtest.mixins.json"],
+  "depends": { "explorersjournal": "*" }
+}

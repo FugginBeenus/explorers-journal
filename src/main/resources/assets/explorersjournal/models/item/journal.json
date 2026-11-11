@@ -1,0 +1,32 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "explorersjournal:item/journal_0"
+  },
+  "overrides": [
+    {
+      "predicate": {
+        "explorersjournal:wear": 0.25
+      },
+      "model": "explorersjournal:item/journal_1"
+    },
+    {
+      "predicate": {
+        "explorersjournal:wear": 0.5
+      },
+      "model": "explorersjournal:item/journal_2"
+    },
+    {
+      "predicate": {
+        "explorersjournal:wear": 0.75
+      },
+      "model": "explorersjournal:item/journal_3"
+    },
+    {
+      "predicate": {
+        "explorersjournal:wear": 1.0
+      },
+      "model": "explorersjournal:item/journal_4"
+    }
+  ]
+}

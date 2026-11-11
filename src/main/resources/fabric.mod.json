@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "explorersjournal",
+  "version": "${version}",
+  "name": "Explorer's Journal",
+  "description": "A leather-bound journal you fill with maps, sketches, photos, and keepsakes from your travels. It looks more worn as it fills.",
+  "authors": ["fugginbeenus"],
+  "license": "MIT",
+  "icon": "assets/explorersjournal/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "main":   ["com.fugginbeenus.explorersjournal.ExplorersJournal"],
+    "client": ["com.fugginbeenus.explorersjournal.ExplorersJournalClient"]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "${minecraft_dep}",
+    "fabric-api": "*"
+  },
+  "suggests": {
+    "locationtooltip": ">=0.8.0",
+    "exposure": "*"
+  },
+  "mixins": [
+    "explorersjournal.mixins.json"
+  ]
+}

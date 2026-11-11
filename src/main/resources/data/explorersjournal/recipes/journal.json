@@ -1,0 +1,11 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    { "item": "minecraft:writable_book" },
+    { "item": "minecraft:compass" }
+  ],
+  "result": {
+    "item": "explorersjournal:journal",
+    "count": 1
+  }
+}

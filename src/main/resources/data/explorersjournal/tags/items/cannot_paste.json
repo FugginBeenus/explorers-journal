@@ -1,0 +1,8 @@
+{
+  "replace": false,
+  "values": [
+    { "id": "exposure:album", "required": false },
+    { "id": "exposure:signed_album", "required": false },
+    { "id": "exposure:stacked_photographs", "required": false }
+  ]
+}

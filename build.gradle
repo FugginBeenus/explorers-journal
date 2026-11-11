@@ -1,0 +1,100 @@
+plugins {
+    id "java"
+    id "fabric-loom" version "${loom_version}"
+}
+
+group = findProperty("group")
+version = findProperty("version")
+
+base {
+    archivesName = property("archives_base_name").toString()
+}
+
+def javaVersion = Integer.parseInt(property('java_version').toString())
+def mcVersion = property('minecraft_version').toString()
+
+java {
+    toolchain { languageVersion = JavaLanguageVersion.of(javaVersion) }
+    withSourcesJar()
+}
+
+repositories {
+    mavenCentral()
+    maven { url = "https://maven.fabricmc.net/" }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${mcVersion}"
+    mappings loom.officialMojangMappings()
+    modImplementation "net.fabricmc:fabric-loader:${property('loader_version')}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${property('fabric_api_version')}"
+}
+
+// A small test mod that drives the game through scripted checks. It never goes in the release jar.
+sourceSets {
+    testmod {
+        compileClasspath += sourceSets.main.compileClasspath + sourceSets.main.output
+        runtimeClasspath += sourceSets.main.runtimeClasspath + sourceSets.main.output
+    }
+}
+
+loom {
+    mods {
+        explorersjournal { sourceSet sourceSets.main }
+        ejtest { sourceSet sourceSets.testmod }
+    }
+    runs {
+        testClient {
+            client()
+            ideConfigGenerated false
+            source sourceSets.testmod
+            runDir "run-${findProperty('user') ?: 'Dev'}"
+            vmArg "-Dej.script=${findProperty('ejscript') ?: ''}"
+            programArgs "--username", "${findProperty('user') ?: 'Dev'}", "--width", "854", "--height", "480"
+            if (findProperty('world')) programArgs "--quickPlaySingleplayer", "${findProperty('world')}"
+            if (findProperty('join')) programArgs "--quickPlayMultiplayer", "${findProperty('join')}"
+        }
+        testServer {
+            server()
+            ideConfigGenerated false
+            source sourceSets.testmod
+            runDir "run-server"
+            vmArg "-Dej.script=${findProperty('ejscript') ?: ''}"
+        }
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = "UTF-8"
+    options.release = javaVersion
+}
+
+// 1.21 uses singular datapack folders and "id" (not "item") in recipe results.
+def modernData = stonecutter.eval(stonecutter.current.version, ">=1.21")
+
+tasks.processResources {
+    inputs.property "version", project.version
+    inputs.property "minecraft_dep", mcVersion
+    inputs.property "modernData", modernData
+    filesMatching("fabric.mod.json") {
+        expand("version": project.version, "minecraft_dep": mcVersion)
+    }
+    if (modernData) {
+        filesMatching("data/explorersjournal/recipes/*.json") {
+            filter { line -> line.replace('"item": "explorersjournal:', '"id": "explorersjournal:') }
+        }
+        eachFile { f ->
+            f.path = f.path.replace("data/explorersjournal/recipes/", "data/explorersjournal/recipe/")
+                    .replace("data/explorersjournal/tags/items/", "data/explorersjournal/tags/item/")
+        }
+        includeEmptyDirs = false
+    }
+}
+
+tasks.remapJar {
+    archiveVersion = "${project.version}+${mcVersion}"
+}
+
+tasks.matching { it.name == "remapSourcesJar" }.configureEach {
+    archiveVersion = "${project.version}+${mcVersion}"
+}
