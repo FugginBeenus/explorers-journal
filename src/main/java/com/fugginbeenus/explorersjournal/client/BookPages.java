@@ -39,40 +39,49 @@ final class BookPages {
     private final Map<Entry, Integer> firstPage = new IdentityHashMap<>();
     private final Map<Entry, Integer> number = new IdentityHashMap<>();
     private final Map<Entry, List<TextFlow.Line>> lines = new IdentityHashMap<>();
+    private final Map<Entry, Corners.Where> where = new IdentityHashMap<>();
     int placesPage, blankPage;
 
-    /** flows keeps the lines of entries that did not change, so typing only lays out the note you are writing. */
-    BookPages(Journal journal, Font font, Entry editing, List<TextFlow.Line> editingLines, Map<Entry, List<TextFlow.Line>> flows, String query, double px, double pz, String dim) {
+    /** flows keeps the lines of entries that did not change, so typing only lays out the note you are writing. stage is how worn the book is, for its folded corners. */
+    BookPages(Journal journal, Font font, Entry editing, List<TextFlow.Line> editingLines, Map<TextFlow.Key, List<TextFlow.Line>> flows, String query, double px, double pz, String dim, int stage) {
         List<Entry> entries = new ArrayList<>(journal.entries);
         if (editing != null && !entries.contains(editing)) entries.add(editing);
 
-        // entry pages first, so the lists can give page numbers
+        // the lists come first. How many pages they fill does not depend on the page numbers in them, so each entry knows its side of the book before it is laid out
+        List<List<Row>> contents = contentsPages(entries, entry -> "");
+        List<List<Row>> places = placesPages(entries, query, px, pz, dim, entry -> "");
+        int at = contents.size() + places.size();
+
         List<Page> entryPages = new ArrayList<>();
         int printed = 1;
         for (Entry entry : entries) {
+            Corners.Where side = new Corners.Where(at % 2 == 0, stage);
+            where.put(entry, side);
             boolean writing = entry == editing && editingLines != null;
-            List<TextFlow.Line> flow = writing ? editingLines : flows.computeIfAbsent(entry, e -> TextFlow.layOut(font, e.text, e));
+            List<TextFlow.Line> flow = writing ? editingLines : flows.computeIfAbsent(new TextFlow.Key(entry, side), k -> TextFlow.layOut(font, entry.text, entry, side));
             lines.put(entry, flow);
             int lastPage = writing || !entry.text.isEmpty() ? flow.get(flow.size() - 1).page() : 0;
             for (Keepsake keepsake : entry.keepsakes) lastPage = Math.max(lastPage, keepsake.page);
             number.put(entry, printed);
             int line = 0;
-            for (int at = 0; at <= lastPage; at++) {
-                Page page = new Page(Kind.ENTRY);
-                page.entry = entry;
-                page.firstOfEntry = at == 0;
-                page.entryPage = at;
-                page.firstLine = line;
-                while (line < flow.size() && flow.get(line).page() == at) line++;
-                page.lineCount = line - page.firstLine;
-                page.number = printed++;
-                entryPages.add(page);
+            for (int page = 0; page <= lastPage; page++) {
+                Page p = new Page(Kind.ENTRY);
+                p.entry = entry;
+                p.firstOfEntry = page == 0;
+                p.entryPage = page;
+                p.firstLine = line;
+                while (line < flow.size() && flow.get(line).page() == page) line++;
+                p.lineCount = line - p.firstLine;
+                p.number = printed++;
+                entryPages.add(p);
             }
+            at += lastPage + 1;
         }
 
-        addContents(entries);
+        java.util.function.Function<Entry, String> numberOf = entry -> Integer.toString(number.get(entry));
+        addPages(Kind.CONTENTS, contentsPages(entries, numberOf));
         placesPage = pages.size();
-        addPlaces(journal, entries, query, px, pz, dim);
+        addPages(Kind.PLACES, placesPages(entries, query, px, pz, dim, numberOf));
         int front = pages.size();
         pages.addAll(entryPages);
         for (int i = front; i < pages.size(); i++) {
@@ -84,24 +93,34 @@ final class BookPages {
         if (pages.size() % 2 == 1) pages.add(new Page(Kind.EMPTY));
     }
 
-    private void addContents(List<Entry> entries) {
+    private void addPages(Kind kind, List<List<Row>> parts) {
+        boolean first = true;
+        for (List<Row> part : parts) {
+            Page page = new Page(kind);
+            page.firstOfKind = first;
+            page.rows = part;
+            pages.add(page);
+            first = false;
+        }
+    }
+
+    /** The contents, split into pages. There is always at least one page, even with nothing in it. */
+    private static List<List<Row>> contentsPages(List<Entry> entries, java.util.function.Function<Entry, String> numberOf) {
         List<Row> rows = new ArrayList<>();
         for (Section section : Section.values()) {
             boolean heading = false;
             for (Entry entry : entries) {
                 if (Section.of(entry) != section) continue;
                 if (!heading) {
-                    rows.add(new Row("", section.title, Integer.toString(number.get(entry)), 0, entry));
+                    rows.add(new Row("", section.title, numberOf.apply(entry), 0, entry));
                     heading = true;
                 }
-                rows.add(new Row("", displayTitle(entry), Integer.toString(number.get(entry)), 1, entry));
+                rows.add(new Row("", displayTitle(entry), numberOf.apply(entry), 1, entry));
             }
         }
-        boolean first = true;
+        List<List<Row>> parts = new ArrayList<>();
         int i = 0;
         do {
-            Page page = new Page(Kind.CONTENTS);
-            page.firstOfKind = first;
             List<Row> part = new ArrayList<>();
             int used = 0;
             while (i < rows.size()) {
@@ -112,19 +131,19 @@ final class BookPages {
                 used += h;
                 i++;
             }
-            page.rows = part;
-            pages.add(page);
-            first = false;
+            parts.add(part);
         } while (i < rows.size());
+        return parts;
     }
 
-    private void addPlaces(Journal journal, List<Entry> entries, String query, double px, double pz, String dim) {
+    /** The place list, or what find found, split into pages. There is always at least one page. */
+    private static List<List<Row>> placesPages(List<Entry> entries, String query, double px, double pz, String dim, java.util.function.Function<Entry, String> numberOf) {
         List<Row> rows = new ArrayList<>();
         if (query != null && !query.isBlank()) {
             String q = query.toLowerCase(Locale.ROOT);
             for (Entry entry : entries) {
                 if (matches(entry, q)) {
-                    rows.add(new Row(Long.toString(entry.day), displayTitle(entry), "p." + number.get(entry), 1, entry));
+                    rows.add(new Row(Long.toString(entry.day), displayTitle(entry), "p." + numberOf.apply(entry), 1, entry));
                 }
             }
         } else {
@@ -137,16 +156,13 @@ final class BookPages {
                 rows.add(new Row(Long.toString(entry.day), displayTitle(entry), far(entry, px, pz, dim), 1, entry));
             }
         }
-        boolean first = true;
+        List<List<Row>> parts = new ArrayList<>();
         int i = 0;
         do {
-            Page page = new Page(Kind.PLACES);
-            page.firstOfKind = first;
-            page.rows = new ArrayList<>(rows.subList(i, Math.min(i + PLACE_ROWS, rows.size())));
-            pages.add(page);
+            parts.add(new ArrayList<>(rows.subList(i, Math.min(i + PLACE_ROWS, rows.size()))));
             i += PLACE_ROWS;
-            first = false;
         } while (i < rows.size());
+        return parts;
     }
 
     private static boolean matches(Entry entry, String q) {
@@ -190,6 +206,11 @@ final class BookPages {
 
     List<TextFlow.Line> linesOf(Entry entry) {
         return lines.get(entry);
+    }
+
+    /** Which side of the book an entry starts on, and how worn the book is. */
+    Corners.Where whereOf(Entry entry) {
+        return where.getOrDefault(entry, Corners.Where.FLAT);
     }
 
     int pageOf(Entry entry) {

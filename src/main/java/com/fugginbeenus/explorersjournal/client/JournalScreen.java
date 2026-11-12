@@ -40,6 +40,8 @@ public final class JournalScreen extends EJScreen {
     private static final int PAGE_W = 129;
     private static final int TITLE_W = PAGE_W - 8;
     private static final int ARROW_W = 23, ARROW_H = 13, ARROW_Y = 173;
+    // by wear stage: the forward arrow sits just clear of the right page's bottom corner, which curls and then folds
+    private static final int[] FORWARD_ARROW_X = {270, 270, 264, 255, 254};
     private static final int FEATHER_Y = 171, FEATHER_SIZE = 16;
     private static final int DONE_X = 204, DONE_W = 36, DELETE_X = 246, DELETE_W = 44, PASTE_X = 66, PASTE_W = 40;
     private static final int FIND_Y = 163, FIND_CHARS = 24;
@@ -96,7 +98,7 @@ public final class JournalScreen extends EJScreen {
     private final List<Link> links = new ArrayList<>();
     private final List<PinSpot> pinSpots = new ArrayList<>();
     private final List<MarkName> markNames = new ArrayList<>();
-    private final Map<Entry, List<TextFlow.Line>> flows = new IdentityHashMap<>();
+    private final Map<TextFlow.Key, List<TextFlow.Line>> flows = new java.util.HashMap<>();
     private List<Component> tooltip = List.of();
     private Optional<TooltipComponent> tooltipImage = Optional.empty();
     private List<Integer> pickable;
@@ -194,8 +196,36 @@ public final class JournalScreen extends EJScreen {
         if (player == null || this.minecraft.level == null) return;
         String dim = this.minecraft.level.dimension().location().toString();
         String q = find != null ? find.value() : query;
-        book = new BookPages(journal, this.font, editEntry, body == null ? null : body.lines(), flows, q, player.getX(), player.getZ(), dim);
+        book = new BookPages(journal, this.font, editEntry, body == null ? null : body.lines(), flows, q, player.getX(), player.getZ(), dim, wear);
+        // the note you write moved to the other side of the book, or the book wore: lay it out again for its corners
+        if (editEntry != null && body != null && !book.whereOf(editEntry).equals(body.where())) {
+            body.flowOn(editEntry, book.whereOf(editEntry));
+            book = new BookPages(journal, this.font, editEntry, body.lines(), flows, q, player.getX(), player.getZ(), dim, wear);
+        }
+        if (editEntry != null && title != null) title.boxWidth(titleRoom(editEntry));
         spread = Math.max(0, Math.min(spread, lastSpread()));
+    }
+
+    /** Which side of the book an entry starts on. A new entry starts on the blank page. */
+    private Corners.Where whereOf(Entry entry) {
+        if (book == null) return Corners.Where.FLAT;
+        int page = book.pageOf(entry);
+        return page >= 0 ? book.whereOf(entry) : new Corners.Where(book.blankPage % 2 == 0, wear);
+    }
+
+    /** Where a title starts, from the page's left edge: by its layout, and past a folded corner. */
+    private int titleStart(Entry entry, int width) {
+        EntryLayout at = EntryLayout.of(entry);
+        Corners.Where where = whereOf(entry);
+        return Math.max(at.titleX(width), Corners.start(where.startsLeft(), where.stage(), at.titleY - 1, at.titleY + 10));
+    }
+
+    /** How wide a title can be, so it stays on the page and off a folded corner. A centered title that meets a fold starts past it. */
+    private int titleRoom(Entry entry) {
+        EntryLayout at = EntryLayout.of(entry);
+        Corners.Where where = whereOf(entry);
+        int fold = Corners.start(where.startsLeft(), where.stage(), at.titleY - 1, at.titleY + 10);
+        return Math.min(at.titleRoom(), PAGE_W - 4 - Math.max(fold, at.centered ? 0 : at.titleX));
     }
 
     /** Stays on the same writing, even if the lists in front grew or shrank. */
@@ -229,7 +259,7 @@ public final class JournalScreen extends EJScreen {
     }
 
     private int titleX(Entry entry, int x) {
-        return x + EntryLayout.of(entry).titleX(titleWidth(entry, titleShown(entry)));
+        return x + titleStart(entry, titleWidth(entry, titleShown(entry)));
     }
 
     private int titleY(Entry entry) {
@@ -312,7 +342,7 @@ public final class JournalScreen extends EJScreen {
         int menu = menuShown() ? canvasPage() ^ 1 : -1;
         for (int i = spread * 2; i <= spread * 2 + 1; i++) {
             if (i == picker) drawPicker(ctx, pageX(i), mouseX, mouseY);
-            else if (i == menu) desk.drawMenu(ctx, this.font, pageX(i), pageTop, mouseX, mouseY);
+            else if (i == menu) desk.drawMenu(ctx, this.font, pageX(i), pageTop, mouseX, mouseY, headingSpot(i % 2 == 0));
             else drawPage(ctx, i, mouseX, mouseY);
         }
         if (pickable == null) drawArrows(ctx, mouseX, mouseY);
@@ -495,7 +525,7 @@ public final class JournalScreen extends EJScreen {
 
     /** The short note beside each thing, in lighter ink than the writing. Under or over a photo, a small arrow points at it. */
     private void drawCaptions(GuiGraphics ctx, BookPages.Page page, int x) {
-        for (Captions.Box box : Captions.place(this.font, page.entry, page.entryPage)) {
+        for (Captions.Box box : Captions.place(this.font, page.entry, page.entryPage, book.whereOf(page.entry))) {
             Keepsake keepsake = box.keepsake();
             if (isGrabbed(keepsake)) continue;
             int bx = x + box.x(), by = pageTop + box.y(), seed = Captions.seed(keepsake);
@@ -547,7 +577,7 @@ public final class JournalScreen extends EJScreen {
             if (!showsItself(i)) continue;
             BookPages.Page page = book.pages.get(i);
             if (page.entry == null) continue;
-            for (Captions.Box box : Captions.place(this.font, page.entry, page.entryPage)) {
+            for (Captions.Box box : Captions.place(this.font, page.entry, page.entryPage, book.whereOf(page.entry))) {
                 int w = Math.max(box.blockWidth(), 24), h = box.widths().length * PageEditor.LINE_H;
                 if (EJGui.over(mx, my, pageX(i) + box.x() - 1, pageTop + box.y() - 2, w + 2, h + 2)) return new NoteAt(page.entry, box, i);
             }
@@ -606,7 +636,7 @@ public final class JournalScreen extends EJScreen {
             ItemStack stack = KeepsakeArt.stack(stuck.keepsake());
             List<Component> hints = new ArrayList<>();
             // a note cut short for room shows whole here
-            for (Captions.Box box : Captions.place(this.font, stuck.entry(), stuck.keepsake().page)) {
+            for (Captions.Box box : Captions.place(this.font, stuck.entry(), stuck.keepsake().page, book.whereOf(stuck.entry()))) {
                 if (box.keepsake().id.equals(stuck.keepsake().id) && box.cut()) hints.add(Component.literal("\"" + Captions.text(stuck.keepsake()) + "\"").withStyle(ChatFormatting.ITALIC));
             }
             if (canWrite) {
@@ -682,8 +712,14 @@ public final class JournalScreen extends EJScreen {
     }
 
     private void heading(GuiGraphics ctx, String text, int x) {
-        EJGui.writeBold(ctx, this.font, text, x + 2, pageTop - 2, EJGui.INK);
-        EJGui.line(ctx, x, pageTop + 8, x + PAGE_W - 2, pageTop + 9, EJGui.INK);
+        int[] at = headingSpot(x == leftX);
+        EJGui.writeBold(ctx, this.font, text, x + at[0], pageTop - 2, EJGui.INK);
+        EJGui.line(ctx, x + at[1], pageTop + 8, x + PAGE_W - 2, pageTop + 9, EJGui.INK);
+    }
+
+    /** Where a page's heading starts, and where its underline starts, past a folded corner. */
+    private int[] headingSpot(boolean leftPage) {
+        return new int[]{Math.max(2, Corners.start(leftPage, wear, -3, 8)), Corners.start(leftPage, wear, 8, 9)};
     }
 
     private void drawContents(GuiGraphics ctx, BookPages.Page page, int x, int mx, int my) {
@@ -853,7 +889,7 @@ public final class JournalScreen extends EJScreen {
     /** A long place name loses whole words from its end, so it stays on the page. The full name stays in the journal. */
     private String fitTitle(Entry entry, String text) {
         String s = text;
-        int room = EntryLayout.of(entry).titleRoom();
+        int room = titleRoom(entry);
         while (titleWidth(entry, s) > room) {
             int space = s.lastIndexOf(' ');
             s = space > 0 ? s.substring(0, space) : s.substring(0, s.length() - 1);
@@ -866,7 +902,7 @@ public final class JournalScreen extends EJScreen {
         int seed = seed(entry);
         String text = editing ? title.value() : fitTitle(entry, entry.title);
         int w = titleWidth(entry, text.isEmpty() ? "Title" : text);
-        int tx = x + at.titleX(w), ty = pageTop + at.titleY;
+        int tx = x + titleStart(entry, w), ty = pageTop + at.titleY;
         int ink = at.caption ? EJGui.INK_SOFT : EJGui.INK;
         if (editing) {
             if (text.isEmpty()) EJGui.write(ctx, this.font, "Title", tx, ty, EJGui.INK_FAINT);
@@ -902,7 +938,7 @@ public final class JournalScreen extends EJScreen {
         String shown = editing ? title.value() : fitTitle(entry, entry.title);
         if (editing && shown.isEmpty()) shown = "Title";
         int w = titleWidth(entry, shown);
-        int tx = x + at.titleX(w), ty = pageTop + at.titleY;
+        int tx = x + titleStart(entry, w), ty = pageTop + at.titleY;
         if (at.day == EntryLayout.Day.RIGHT) {
             int dayX = x + PAGE_W - 2 - this.font.width(day);
             if (tx + Math.max(36, w + 2) + 6 >= dayX) return null;
@@ -1122,7 +1158,7 @@ public final class JournalScreen extends EJScreen {
 
     private void drawChoices(GuiGraphics ctx, int x, int mx, int my) {
         long today = this.minecraft.level.getDayTime() / 24000L + 1;
-        EJGui.write(ctx, this.font, "Day " + today, x + 3, pageTop - 2, EJGui.INK_FAINT);
+        EJGui.write(ctx, this.font, "Day " + today, x + Math.max(3, Corners.start(x == leftX, wear, -3, 8)), pageTop - 2, EJGui.INK_FAINT);
         for (int i = 0; i < CHOICES.length; i++) {
             int y = choiceY(i);
             boolean ready = i != 0 || !drawingMap;
@@ -1176,7 +1212,7 @@ public final class JournalScreen extends EJScreen {
     }
 
     private int arrowX(boolean next) {
-        return next ? bookX + 270 : bookX + 19;
+        return next ? bookX + FORWARD_ARROW_X[Math.min(wear, FORWARD_ARROW_X.length - 1)] : bookX + 19;
     }
 
     private boolean overArrow(double mx, double my, boolean next) {
@@ -1550,7 +1586,7 @@ public final class JournalScreen extends EJScreen {
         Keepsake keepsake = editEntry.keepsake(captionId);
         int first = book.pageOf(editEntry);
         if (keepsake == null || first < 0) return null;
-        for (Captions.Box box : Captions.place(this.font, editEntry, keepsake.page)) {
+        for (Captions.Box box : Captions.place(this.font, editEntry, keepsake.page, book.whereOf(editEntry))) {
             if (box.keepsake().id.equals(captionId)) return new NoteAt(editEntry, box, first + keepsake.page);
         }
         return null;
@@ -1565,7 +1601,7 @@ public final class JournalScreen extends EJScreen {
         commitCaption();
         captionId = keepsake.id;
         captionStart = Captions.text(keepsake);
-        Captions.startWriting(this.font, editEntry, keepsake);
+        Captions.startWriting(this.font, editEntry, keepsake, book.whereOf(editEntry));
         caption = PageEditor.note(this.font, captionStart, Captions.MAX_CHARS, Captions.seed(keepsake), Captions.LIMIT_W, Captions.MAX_LINES, Captions.LIMIT_W);
         NoteAt at = captionBox();
         if (at != null) caption.boxWidth(at.box().width());
@@ -1753,8 +1789,8 @@ public final class JournalScreen extends EJScreen {
         editStartTitle = entry.title;
         editStartText = entry.text;
         EntryLayout at = EntryLayout.of(entry);
-        title = PageEditor.title(this.font, entry.title, EJPayloads.MAX_TITLE, seed(entry), at.titleRoom(), !at.caption);
-        body = PageEditor.body(this.font, entry.text, EJPayloads.MAX_TEXT, seed(entry), entry);
+        title = PageEditor.title(this.font, entry.title, EJPayloads.MAX_TITLE, seed(entry), titleRoom(entry), !at.caption);
+        body = PageEditor.body(this.font, entry.text, EJPayloads.MAX_TEXT, seed(entry), entry, whereOf(entry));
         title.toEnd();
         body.toEnd();
         focus = body;
@@ -2085,6 +2121,11 @@ public final class JournalScreen extends EJScreen {
         return editEntry == null ? "" : editEntry.id;
     }
 
+    /** Where the forward page arrow is, from the book's left edge. */
+    public int forwardArrowX() {
+        return arrowX(true) - bookX;
+    }
+
     /** The wear stage the server says this book shows. */
     public int wearShown() {
         return wear;
@@ -2200,6 +2241,11 @@ public final class JournalScreen extends EJScreen {
     private List<Object[]> pieces(int page) {
         List<Object[]> out = new ArrayList<>();
         BookPages.Page at = book.pages.get(page);
+        String head = at.kind == BookPages.Kind.CONTENTS ? "Contents" : at.kind == BookPages.Kind.PLACES ? (find != null || query != null ? "Found" : "Places I've been") : null;
+        if (head != null) {
+            int hx = headingSpot(page % 2 == 0)[0];
+            out.add(new Object[]{new int[]{hx, -3, hx + Drift.width(this.font, head, true), 7}, "heading"});
+        }
         if (at.entry == null) return out;
         Entry entry = at.entry;
         EntryLayout layout = EntryLayout.of(entry);
@@ -2208,7 +2254,7 @@ public final class JournalScreen extends EJScreen {
         if (at.firstOfEntry) {
             String shown = editing ? title.value() : fitTitle(entry, entry.title);
             if (!shown.isEmpty()) {
-                int w = titleWidth(entry, shown), tx = layout.titleX(w);
+                int w = titleWidth(entry, shown), tx = titleStart(entry, w);
                 out.add(new Object[]{new int[]{tx, layout.titleY - 1, tx + w, layout.titleY + 9}, "title"});
             }
             int[] day = daySpot(entry, x, editing);
@@ -2227,7 +2273,7 @@ public final class JournalScreen extends EJScreen {
         for (Keepsake keepsake : entry.keepsakes) {
             if (keepsake.page == at.entryPage) out.add(new Object[]{KeepsakeArt.bounds(keepsake), "thing " + KeepsakeArt.name(keepsake), keepsake});
         }
-        for (Captions.Box box : Captions.place(this.font, entry, at.entryPage)) {
+        for (Captions.Box box : Captions.place(this.font, entry, at.entryPage, book.whereOf(entry))) {
             for (int i = 0; i < box.widths().length; i++) {
                 int y = box.y() + i * PageEditor.LINE_H;
                 out.add(new Object[]{new int[]{box.x(), y - 1, box.x() + box.widths()[i], y + 9}, "note of " + KeepsakeArt.name(box.keepsake())});
@@ -2245,9 +2291,15 @@ public final class JournalScreen extends EJScreen {
     public List<String> layoutProblems(int page) {
         List<String> problems = new ArrayList<>();
         List<Object[]> pieces = pieces(page);
+        boolean left = page % 2 == 0;
         for (int i = 0; i < pieces.size(); i++) {
             int[] a = (int[]) pieces.get(i)[0];
             String an = (String) pieces.get(i)[1];
+            if (!an.startsWith("thing")) {
+                // the fold itself starts CLEAR pixels past where writing may start. A pixel of hand drift stays inside that gap.
+                int reach = Corners.start(left, wear, a[1], a[3] - 1) - Corners.CLEAR, from = Corners.stop(left, wear, a[1], a[3] - 1) + Corners.CLEAR;
+                if (reach > 0 && a[0] < reach || from < EntryLayout.PAGE_W && a[2] > from) problems.add(an + " lies on the folded corner at " + Arrays.toString(a));
+            }
             // a thing may reach onto the paper past the writing area. Writing may not.
             int edge = an.startsWith("thing") ? 8 : 0;
             if (a[0] < -edge || a[2] > PAGE_W + edge || a[1] < -6 || a[3] > EntryLayout.BOTTOM + 3 + edge) problems.add(an + " leaves the page at " + Arrays.toString(a));
@@ -2302,7 +2354,7 @@ public final class JournalScreen extends EJScreen {
         if (entry == null || keepsake >= entry.keepsakes.size()) return null;
         Keepsake k = entry.keepsakes.get(keepsake);
         int page = book.pageOf(entry) + k.page;
-        for (Captions.Box box : Captions.place(this.font, entry, k.page)) {
+        for (Captions.Box box : Captions.place(this.font, entry, k.page, book.whereOf(entry))) {
             if (box.keepsake().id.equals(k.id)) return new int[]{pageX(page) - bookX + box.x(), pageTop - bookY + box.y(), box.side().ordinal()};
         }
         return null;
@@ -2322,7 +2374,7 @@ public final class JournalScreen extends EJScreen {
         BookPages.Page at = book.pages.get(page);
         if (at.entry == null) return 0;
         int cut = 0;
-        for (Captions.Box box : Captions.place(this.font, at.entry, at.entryPage)) {
+        for (Captions.Box box : Captions.place(this.font, at.entry, at.entryPage, book.whereOf(at.entry))) {
             if (box.cut()) cut++;
         }
         return cut;

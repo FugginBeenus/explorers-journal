@@ -67,13 +67,15 @@ public final class EJGui {
         image(ctx, RIBBON_BLUE, x, y, 31, 23);
     }
 
-    /** A cut paper tab, glued to a page edge. Only its end shows past the book. It slides out a little under the mouse. */
+    /** A cut paper tab, glued to a page edge. Only its end shows past the book, with its two outer corners snipped, like the slips. It slides out a little under the mouse. */
     public static void tab(GuiGraphics ctx, Font font, Section section, int bookX, int bookY, boolean hover) {
         int x0 = bookX + 292, x1 = bookX + BOOK_W + 7 + (hover ? 2 : 0), y0 = bookY + section.y, y1 = y0 + 16;
-        ctx.fill(x0 + 1, y0 + 1, x1 + 2, y1 + 1, 0x641C0F00);
-        ctx.fill(x0, y0, x1 + 1, y1, section.dark);
+        ctx.fill(x0 + 1, y0 + 2, x1 + 2, y1, 0x641C0F00);
+        ctx.fill(x0 + 1, y1, x1 + 1, y1 + 1, 0x641C0F00);
+        ctx.fill(x0, y0, x1, y1, section.dark);
+        ctx.fill(x1, y0 + 1, x1 + 1, y1 - 1, section.dark);
         ctx.fill(x0, y0 + 1, x1, y1 - 1, section.paper);
-        ctx.fill(x0, y0 + 1, x1, y0 + 2, section.light);
+        ctx.fill(x0, y0 + 1, x1 - 1, y0 + 2, section.light);
         write(ctx, font, section.letter, x1 - font.width(section.letter), y0 + 5, TAB_INK);
     }
 

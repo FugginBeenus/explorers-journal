@@ -29,6 +29,7 @@ final class PageEditor extends MultilineTextField {
     private final Deque<Snapshot> undo = new ArrayDeque<>(), redo = new ArrayDeque<>();
     private int maxWidth;
     private Entry entry;
+    private Corners.Where where = Corners.Where.FLAT;
     private List<TextFlow.Line> lines = List.of(new TextFlow.Line(0, 0, 0, 0, 0));
     private int lastEdit = EDIT_OTHER;
     private int lastClickIndex = -1;
@@ -50,8 +51,10 @@ final class PageEditor extends MultilineTextField {
         layOut();
     }
 
-    static PageEditor body(Font font, String text, int maxChars, int seed, Entry entry) {
-        return new PageEditor(font, text, maxChars, seed, 0, false, false, 0, 0, 0, entry);
+    static PageEditor body(Font font, String text, int maxChars, int seed, Entry entry, Corners.Where where) {
+        PageEditor body = new PageEditor(font, text, maxChars, seed, 0, false, false, 0, 0, 0, entry);
+        body.flowOn(entry, where);
+        return body;
     }
 
     /** A heading is bold. A title written under a picture is plain. */
@@ -70,8 +73,18 @@ final class PageEditor extends MultilineTextField {
 
     /** Lays the writing out again, when something on its page changed. */
     void flowOn(Entry entry) {
+        flowOn(entry, where);
+    }
+
+    /** Lays the writing out again, where its pages now are in the book. */
+    void flowOn(Entry entry, Corners.Where where) {
         this.entry = entry;
+        this.where = where;
         layOut();
+    }
+
+    Corners.Where where() {
+        return where;
     }
 
     /** A note's box can change when its thing moves. */
@@ -83,7 +96,7 @@ final class PageEditor extends MultilineTextField {
 
     private void layOut() {
         String text = value();
-        if (entry != null) lines = TextFlow.layOut(font, text, entry);
+        if (entry != null) lines = TextFlow.layOut(font, text, entry, where);
         else if (boxLines > 0) lines = TextFlow.wrap(font, text, maxWidth, seed);
         else lines = List.of(new TextFlow.Line(0, text.length(), 0, 0, 0));
     }

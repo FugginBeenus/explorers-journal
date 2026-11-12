@@ -75,11 +75,11 @@ final class Captions {
      * Starts writing a note. It stays where it is now, if it shows. A new note gets its spot once, then stays there while you write.
      * It grows from the side nearest its thing: beside it, from its middle. Under it, from its top. Over it, from its bottom.
      */
-    static void startWriting(Font font, Entry entry, Keepsake keepsake) {
-        Box now = find(place(font, entry, keepsake.page), keepsake);
+    static void startWriting(Font font, Entry entry, Keepsake keepsake, Corners.Where where) {
+        Box now = find(place(font, entry, keepsake.page, where), keepsake);
         writing = keepsake.id;
         pin = null;
-        if (now == null) now = find(place(font, entry, keepsake.page), keepsake);
+        if (now == null) now = find(place(font, entry, keepsake.page, where), keepsake);
         if (now != null) pinTo(keepsake, now);
     }
 
@@ -111,8 +111,9 @@ final class Captions {
     }
 
     /** Every note on this page of the entry, in the order the things were taped down. An earlier note keeps its place when a later one comes. */
-    static List<Box> place(Font font, Entry entry, int page) {
-        StringBuilder key = new StringBuilder(entry.id).append('|').append(entry.type).append('|').append(page).append('|').append(writing).append('|').append(pin);
+    static List<Box> place(Font font, Entry entry, int page, Corners.Where where) {
+        boolean left = where.left(page);
+        StringBuilder key = new StringBuilder(entry.id).append('|').append(entry.type).append('|').append(page).append('|').append(left).append(where.stage()).append('|').append(writing).append('|').append(pin);
         List<Keepsake> here = new ArrayList<>();
         List<int[]> items = new ArrayList<>();
         for (Keepsake keepsake : entry.keepsakes) {
@@ -124,14 +125,14 @@ final class Captions {
         }
         List<Box> known = KNOWN.get(key.toString());
         if (known != null) return known;
-        List<Box> out = place(font, entry, page, here, items);
+        List<Box> out = place(font, entry, page, here, items, Corners.boxes(left, where.stage()));
         KNOWN.put(key.toString(), out);
         return out;
     }
 
-    private static List<Box> place(Font font, Entry entry, int page, List<Keepsake> here, List<int[]> items) {
+    private static List<Box> place(Font font, Entry entry, int page, List<Keepsake> here, List<int[]> items, List<int[]> folds) {
         EntryLayout at = EntryLayout.of(entry);
-        List<int[]> hard = new ArrayList<>(), soft = new ArrayList<>();
+        List<int[]> hard = new ArrayList<>(folds), soft = new ArrayList<>();
         // a note keeps clear of the title's row and the day on it
         int top = page > 0 ? EntryLayout.MORE_TOP : at.caption ? 0 : at.titleY + 12 + CLEAR;
         if (page == 0) {

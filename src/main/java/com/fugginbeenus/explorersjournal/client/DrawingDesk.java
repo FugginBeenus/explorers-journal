@@ -188,8 +188,10 @@ public final class DrawingDesk {
         return EJGui.over(mx, my, x, y, BOX, BOX);
     }
 
-    void drawMenu(GuiGraphics ctx, Font font, int x, int top, int mx, int my) {
-        heading(ctx, font, "Tools", x, top - 2);
+    /** headingAt: where the first heading and its underline start, past a folded corner. */
+    void drawMenu(GuiGraphics ctx, Font font, int x, int top, int mx, int my, int[] headingAt) {
+        EJGui.writeBold(ctx, font, "Tools", x + headingAt[0], top - 2, EJGui.INK);
+        EJGui.line(ctx, x + headingAt[1], top + 8, x + 127, top + 9, EJGui.INK);
         Tool[] tools = Tool.values();
         for (int i = 0; i < tools.length; i++) {
             int cx = toolX(x, i), cy = toolY(top);

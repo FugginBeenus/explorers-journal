@@ -7,10 +7,13 @@ import net.minecraft.client.gui.Font;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Lays writing out on an entry's pages, by the entry's layout. A row is cut only where something taped down, or its note, really is, so the writing hugs its shape on both sides. */
+/** Lays writing out on an entry's pages, by the entry's layout. A row is cut only where something taped down, or its note, really is, so the writing hugs its shape on both sides. A row near a folded corner starts past it, or stops before it. */
 final class TextFlow {
     /** Letters begin to end go on this row of this page of the entry, x pixels from the page's left edge. A row can hold more than one line. */
     record Line(int begin, int end, int page, int row, int x) {}
+
+    /** An entry's writing, as laid out where its pages are in the book. */
+    record Key(Entry entry, Corners.Where where) {}
 
     private record Slot(int page, int row, int x, int width, boolean wholeRow) {}
 
@@ -19,14 +22,14 @@ final class TextFlow {
 
     private TextFlow() {}
 
-    static List<Line> layOut(Font font, String text, Entry entry) {
+    static List<Line> layOut(Font font, String text, Entry entry, Corners.Where where) {
         EntryLayout at = EntryLayout.of(entry);
         int seed = entry.id.hashCode();
         List<Line> lines = new ArrayList<>();
         int start = 0;
         boolean more = true;
         for (int page = 0; more; page++) {
-            for (Slot slot : slots(font, entry, at, page)) {
+            for (Slot slot : slots(font, entry, at, page, where)) {
                 int[] piece = fit(font, text, start, slot.width(), slot.wholeRow(), seed, lines.size());
                 if (piece == null) continue;
                 lines.add(new Line(start, piece[0], slot.page(), slot.row(), slot.x()));
@@ -54,14 +57,15 @@ final class TextFlow {
     }
 
     /** The free pieces of each row on this page, left to right. */
-    private static List<Slot> slots(Font font, Entry entry, EntryLayout at, int page) {
-        boolean first = page == 0;
+    private static List<Slot> slots(Font font, Entry entry, EntryLayout at, int page, Corners.Where where) {
+        boolean first = page == 0, left = where.left(page);
         int count = at.lines(first), top = at.top(first);
-        List<Captions.Box> notes = Captions.place(font, entry, page);
+        List<Captions.Box> notes = Captions.place(font, entry, page, where);
         List<Slot> slots = new ArrayList<>();
         for (int row = 0; row < count; row++) {
             int y = top + row * PageEditor.LINE_H;
-            int from = at.bodyX + (first && row == 0 ? at.indent : 0), to = at.bodyX + at.bodyW;
+            int from = Math.max(at.bodyX + (first && row == 0 ? at.indent : 0), Corners.start(left, where.stage(), y - 1, y + TEXT_HEIGHT));
+            int to = Math.min(at.bodyX + at.bodyW, Corners.stop(left, where.stage(), y - 1, y + TEXT_HEIGHT));
             boolean[] taken = new boolean[EntryLayout.PAGE_W + 1];
             for (Keepsake keepsake : entry.keepsakes) {
                 if (keepsake.page == page) take(taken, KeepsakeArt.covered(keepsake, y - 1, y + TEXT_HEIGHT + 1), MARGIN);

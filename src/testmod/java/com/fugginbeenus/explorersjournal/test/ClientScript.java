@@ -3585,8 +3585,92 @@ public final class ClientScript implements ClientModInitializer {
         for (int stage = 0; stage < 5; stage++) wearCheck(stage, withNote[stage], "a place and a note", null);
         addEntries(1, 0);
         for (int stage = 0; stage < 5; stage++) wearCheck(stage, withNotes[stage], "a place and two notes", "wear_" + stage);
+
+        // the folded corners: no writing lies on them, on either side of the book
+        addLongNotes();
+        foldCheck(3, 10);
+        foldCheck(4, 17);
         command("journal wear auto");
         finish();
+    }
+
+    /** Notes with long titles and long writing, so titles and full pages land on both sides of the book. */
+    private void addLongNotes() {
+        act(mc -> {
+            String id = JournalItem.id(mc.player.getMainHandItem());
+            String name = mc.player.getGameProfile().getName();
+            MinecraftServer server = mc.getSingleplayerServer();
+            server.execute(() -> {
+                Journal journal = JournalStore.get(server, id);
+                String[] titles = {"The long road north from the river", "Camp", "Over the hills and far away from home", "Fox den"};
+                for (int i = 0; i < titles.length; i++) {
+                    Entry e = new Entry();
+                    e.id = UUID.randomUUID().toString();
+                    e.day = 10 + i;
+                    e.title = titles[i];
+                    e.text = "We left the river at first light and followed the old road north. ".repeat(6 + i * 5);
+                    journal.entries.add(e);
+                }
+                var player = server.getPlayerList().getPlayerByName(name);
+                JournalService.commit(server, player, player.getMainHandItem(), journal);
+            });
+        });
+        pause(10);
+    }
+
+    /** At this wear, nothing written lies on a folded corner, and a title on a left page starts past its fold. */
+    private void foldCheck(int stage, int titleStart) {
+        command("journal wear " + stage);
+        pause(5);
+        openJournal();
+        pause(10);
+        flipAll();
+        act(mc -> {
+            JournalScreen s = screen(mc);
+            List<String> problems = new java.util.ArrayList<>();
+            for (int p = 0; p < s.pageCount(); p++) {
+                for (String problem : s.layoutProblems(p)) problems.add("page " + p + ": " + problem);
+            }
+            problems.stream().limit(6).forEach(Report::line);
+            Report.check("at wear " + stage + ", no writing lies on a folded corner, and nothing touches, on " + s.pageCount() + " pages", problems.isEmpty());
+            int leftTitles = 0, wrong = 0;
+            for (Entry e : s.journal().entries) {
+                int page = s.pageOfEntry(e.id);
+                if (page % 2 != 0 || e.title.isBlank()) continue;
+                leftTitles++;
+                // the title's start, from the left page's edge
+                if (s.spotsOf(e.id)[0] - 4 - 17 < titleStart) wrong++;
+            }
+            Report.check("at wear " + stage + ", " + leftTitles + " titles on left pages start past the fold", leftTitles >= 2 && wrong == 0);
+        });
+        // a long note's first two pages: a title on one side, a full page on the other
+        act(mc -> {
+            JournalScreen s = screen(mc);
+            Entry longest = s.journal().entries.get(s.journal().entries.size() - 1);
+            int page = s.pageOfEntry(longest.id) + 1;
+            while (s.spread() > page / 2) keyQuiet(mc, GLFW.GLFW_KEY_LEFT);
+            while (s.spread() < page / 2) keyQuiet(mc, GLFW.GLFW_KEY_RIGHT);
+        });
+        pause(5);
+        hover(-40, -6);
+        shot("fold_" + stage + "_a");
+        act(mc -> {
+            JournalScreen s = screen(mc);
+            // a page a long note runs on to, on the left
+            Entry other = s.journal().entries.get(s.journal().entries.size() - 2);
+            int page = s.pageOfEntry(other.id) + 2;
+            while (s.spread() > page / 2) keyQuiet(mc, GLFW.GLFW_KEY_LEFT);
+            while (s.spread() < page / 2) keyQuiet(mc, GLFW.GLFW_KEY_RIGHT);
+        });
+        pause(5);
+        shot("fold_" + stage + "_b");
+        act(mc -> {
+            JournalScreen s = screen(mc);
+            while (s.spread() > 0) keyQuiet(mc, GLFW.GLFW_KEY_LEFT);
+        });
+        pause(5);
+        shot("fold_" + stage + "_contents");
+        closeScreen();
     }
 
     private void wearCheck(int stage, String expected, String content, String picture) {
@@ -4435,7 +4519,12 @@ public final class ClientScript implements ClientModInitializer {
         act(mc -> at[0] = screen(mc).spread());
         clickBook(30, 179, 0);
         check("no back arrow on the first page", s -> s.spread() == at[0]);
-        clickBook(281, 179, 0);
+        act(mc -> {
+            int x = bookX(mc) + screen(mc).forwardArrowX() + 11;
+            mc.screen.mouseClicked(x, bookY(mc) + 179, 0);
+            mc.screen.mouseReleased(x, bookY(mc) + 179, 0);
+        });
+        pause(5);
         check("the next arrow turns the page", s -> s.spread() == at[0] + 1);
         clickBook(30, 179, 0);
         check("the back arrow turns back", s -> s.spread() == at[0]);
