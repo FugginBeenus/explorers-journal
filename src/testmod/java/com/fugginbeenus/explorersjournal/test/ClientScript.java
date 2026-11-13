@@ -117,6 +117,7 @@ public final class ClientScript implements ClientModInitializer {
             case "link" -> link();
             case "linkOld" -> linkOld();
             case "rules" -> rules();
+            case "showcase" -> showcase();
             default -> Report.line("no such script: " + script);
         }
         ClientTickEvents.END_CLIENT_TICK.register(this::tick);
@@ -4338,6 +4339,135 @@ public final class ClientScript implements ClientModInitializer {
             }
         });
         commandSaying("journal reload", said);
+        finish();
+    }
+
+    // ---- pictures for the mod's page: a small journal, filled the way a player would, one spread at a time
+
+    /** Turns to the spread that holds this page. */
+    private void showSpread(java.util.function.ToIntFunction<JournalScreen> page) {
+        act(mc -> {
+            JournalScreen s = screen(mc);
+            int to = page.applyAsInt(s) / 2;
+            while (s.spread() > to) keyQuiet(mc, GLFW.GLFW_KEY_LEFT);
+            while (s.spread() < to) keyQuiet(mc, GLFW.GLFW_KEY_RIGHT);
+        });
+        pause(8);
+        hover(-60, -10);
+    }
+
+    /** Stands over a plain wooden floor, looking down, so every picture has the same quiet background. */
+    private void toStudio() {
+        command("tp @s -975 121 150 0 90");
+        pause(30);
+    }
+
+    private void showcase() {
+        inWorld();
+        act(mc -> mc.options.hideGui = true);
+        command("kill @e[type=minecraft:item]");
+        command("clear @a");
+        command("time set 6000");
+        command("weather clear");
+        command("gamerule doDaylightCycle false");
+        command("fill -980 120 145 -970 120 155 minecraft:dark_oak_planks");
+        command("give @a explorersjournal:journal");
+        command("give @a minecraft:poppy");
+        command("give @a minecraft:emerald");
+
+        // a village: the journal names it and draws its map
+        command("tp @s -975 67 150 0 0");
+        pause(100);
+        openJournal();
+        markHere();
+        clickTitleOf(ClientScript::newest);
+        press(GLFW.GLFW_KEY_END);
+        press(GLFW.GLFW_KEY_ENTER);
+        type("The smith sells iron. A good place to rest.");
+        clickDone();
+        pause(10);
+        closeScreen();
+
+        // a sketch of the smith's house
+        command("tp @s -996 67 122 -121 -6");
+        pause(60);
+        openJournal();
+        clickChoice(1);
+        pause(10);
+        clickInWorld();
+        until(mc -> mc.screen instanceof JournalScreen s && s.sketchReady());
+        pause(40);
+        type("The smith's house");
+        clickDone();
+        pause(10);
+        closeScreen();
+
+        // keepsakes, each with a short note beside it
+        toStudio();
+        openJournal();
+        clickChoice(pasteRow());
+        pick(Items.POPPY);
+        stick(0, 26, 48);
+        type("Keepsakes");
+        clickThing(ClientScript::newest, 0);
+        type("poppy, by the smith's door");
+        press(GLFW.GLFW_KEY_ENTER);
+        type("Picked on the way home. The smith waved from his door, and his dog followed me to the bridge.");
+        pasteSlip();
+        pick(Items.EMERALD);
+        stick(0, 92, 112);
+        clickThing(ClientScript::newest, 1);
+        type("my first trade");
+        clickDone();
+        pause(10);
+
+        // a note in your own hand, with a link back to the village
+        clickChoice(writeNoteRow());
+        type("The long road");
+        press(GLFW.GLFW_KEY_ENTER);
+        type("Left at first light and followed the river north. Three days of birch woods, then the hills.");
+        press(GLFW.GLFW_KEY_ENTER);
+        press(GLFW.GLFW_KEY_ENTER);
+        type("see: Stonehollow");
+        clickDone();
+        pause(10);
+        closeScreen();
+
+        // every spread at the Travelled stage, the same quiet background behind each one
+        command("journal wear 2");
+        pause(5);
+        openJournal();
+        pause(10);
+        flipAll();
+        showSpread(s -> 0);
+        shot("show_1_contents");
+        showSpread(s -> s.pageOfEntry(s.journal().entries.get(0).id));
+        shot("show_2_place_sketch");
+        showSpread(s -> s.pageOfEntry(s.journal().entries.get(2).id));
+        shot("show_3_keepsakes_note");
+        showSpread(JournalScreen::blankPage);
+        shot("show_4_blank");
+        clickChoice(drawRow());
+        pause(10);
+        hover(-60, -10);
+        shot("show_5_drawing_tools");
+        press(GLFW.GLFW_KEY_ESCAPE);
+        pause(10);
+        closeScreen();
+
+        // the same spread at all five stages of wear
+        for (int stage = 0; stage < 5; stage++) {
+            command("journal wear " + stage);
+            pause(5);
+            openJournal();
+            pause(10);
+            showSpread(s -> s.pageOfEntry(s.journal().entries.get(0).id));
+            shot("show_wear_" + stage);
+            closeScreen();
+        }
+        command("journal wear auto");
+        command("gamerule doDaylightCycle true");
+        act(mc -> mc.options.hideGui = false);
         finish();
     }
 
