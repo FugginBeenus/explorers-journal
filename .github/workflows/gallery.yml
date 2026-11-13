@@ -1,0 +1,39 @@
+name: Upload gallery
+
+# Uploads the pictures in docs/modrinth/gallery to the Modrinth gallery, in this order.
+# Run it from the Actions tab. Running it again adds the pictures again.
+# Needs the MODRINTH_TOKEN secret with the "Write projects" scope.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  gallery:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Upload the pictures
+        env:
+          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+        run: |
+          PROJECT=$(grep '^modrinth_project=' gradle.properties | cut -d= -f2)
+          n=0
+          upload() {
+            n=$((n + 1))
+            url="https://api.modrinth.com/v2/project/${PROJECT}/gallery?ext=png&featured=$2&ordering=$n"
+            url="$url&title=$(jq -rn --arg s "$3" '$s|@uri')&description=$(jq -rn --arg s "$4" '$s|@uri')"
+            code=$(curl -sS -o /tmp/response -w '%{http_code}' -X POST -A "explorersjournal-gallery" \
+              -H "Authorization: ${MODRINTH_TOKEN}" -H "Content-Type: image/png" \
+              --data-binary "@docs/modrinth/gallery/$1" "$url")
+            case "$code" in
+              200|204) echo "Uploaded $1" ;;
+              *) echo "::error::$1 did not upload (HTTP $code): $(cat /tmp/response)"; exit 1 ;;
+            esac
+          }
+          upload 1-place-and-sketch.png true "A place and a sketch" "Mark a place and the journal draws a map of the land around you. Sketch a view and it draws what you see in ink."
+          upload 2-every-blank-page.png false "Every blank page" "A blank page offers five things to do."
+          upload 3-keepsakes-and-notes.png false "Keepsakes and notes" "Tape in what you find, with a note beside it. Notes can link to other pages."
+          upload 4-contents-and-places.png false "Contents and places" "The contents page and the list of places write themselves."
+          upload 5-wear.png false "Five stages of wear" "The journal goes from New to Battered as you use it."
