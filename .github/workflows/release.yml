@@ -1,0 +1,79 @@
+name: Publish release
+
+# Pushing a version tag (vX.Y.Z) uploads every Minecraft version to Modrinth and makes a GitHub Release.
+# "Run workflow" on the Actions tab can also do a dry run: it builds everything and uploads nothing.
+# Needs a repository secret named MODRINTH_TOKEN: a Modrinth token with the "Create versions" scope.
+#
+# To release: bump version= in gradle.properties, add changelogs/<version>.md, commit,
+# then: git tag vX.Y.Z && git push origin vX.Y.Z
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Build every version but upload nothing'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # 1.20.1 builds with Java 17 and 1.21.1 with Java 21.
+      - name: Set up JDK 17 and 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: |
+            17
+            21
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Register the JDK toolchains for Gradle
+        run: |
+          mkdir -p ~/.gradle
+          echo "org.gradle.java.installations.fromEnv=JAVA_HOME_17_X64,JAVA_HOME_21_X64" >> ~/.gradle/gradle.properties
+
+      - name: Check the version and changelog
+        run: |
+          VERSION=$(grep '^version=' gradle.properties | cut -d= -f2)
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "${GITHUB_REF_NAME#v}" != "$VERSION" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match version=${VERSION} in gradle.properties."
+            exit 1
+          fi
+          if [ ! -f "changelogs/${VERSION}.md" ]; then
+            echo "::error::changelogs/${VERSION}.md is missing."
+            exit 1
+          fi
+
+      # Every version builds first, so one failure stops the release before anything uploads.
+      - name: Build every version
+        run: ./gradlew chiseledBuild collectJars --no-daemon --stacktrace
+
+      - name: Upload every version to Modrinth
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
+        env:
+          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+        run: ./gradlew chiseledModrinth --no-daemon --stacktrace
+
+      - name: Create GitHub Release
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: Explorer's Journal ${{ env.VERSION }}
+          body_path: changelogs/${{ env.VERSION }}.md
+          files: build/release/*.jar
+          fail_on_unmatched_files: false

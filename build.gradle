@@ -1,6 +1,7 @@
 plugins {
     id "java"
     id "fabric-loom" version "${loom_version}"
+    id "com.modrinth.minotaur" version "2.+"
 }
 
 group = findProperty("group")
@@ -28,6 +29,7 @@ dependencies {
     mappings loom.officialMojangMappings()
     modImplementation "net.fabricmc:fabric-loader:${property('loader_version')}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${property('fabric_api_version')}"
+    productionRuntimeMods "net.fabricmc.fabric-api:fabric-api:${property('fabric_api_version')}"
 }
 
 // A small test mod that drives the game through scripted checks. It never goes in the release jar.
@@ -64,6 +66,13 @@ loom {
     }
 }
 
+// The release jar in a normal game: ./gradlew :1.21.1:prodClient -Pworld=ProdWorld
+tasks.register("prodClient", net.fabricmc.loom.task.prod.ClientProductionRunTask) {
+    runDir = file("run-prod")
+    jvmArgs.add("-Dej.prod=client")
+    if (findProperty('world')) programArgs.addAll("--quickPlaySingleplayer", findProperty('world').toString())
+}
+
 tasks.withType(JavaCompile).configureEach {
     options.encoding = "UTF-8"
     options.release = javaVersion
@@ -97,4 +106,29 @@ tasks.remapJar {
 
 tasks.matching { it.name == "remapSourcesJar" }.configureEach {
     archiveVersion = "${project.version}+${mcVersion}"
+}
+
+// Each Minecraft version uploads as its own Modrinth version, like 0.1.0+1.21.1.
+modrinth {
+    token = findProperty("modrinthToken") ?: System.getenv("MODRINTH_TOKEN")
+    projectId = property("modrinth_project").toString()
+    versionNumber = "${version}+${mcVersion}"
+    versionName = "Explorer's Journal ${version} for ${mcVersion}"
+    versionType = "release"
+    uploadFile = tasks.named("remapJar").flatMap { it.archiveFile }
+    gameVersions = [mcVersion]
+    loaders = ["fabric"]
+    environment = "CLIENT_AND_SERVER"
+
+    def changelogFile = rootProject.file("changelogs/${version}.md")
+    changelog = changelogFile.exists() ? changelogFile.text : "Bug fixes and improvements."
+
+    dependencies {
+        required.project "fabric-api"
+        if (mcVersion == "1.21.1") optional.project "exposure"
+    }
+}
+
+tasks.modrinth {
+    dependsOn(tasks.remapJar)
 }
