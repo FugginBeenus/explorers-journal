@@ -22,6 +22,8 @@ public final class EJGui {
     private static final ResourceLocation RIBBON_RED = EJId.of("textures/gui/book/ribbon_red.png");
     private static final ResourceLocation RIBBON_BLUE = EJId.of("textures/gui/book/ribbon_blue.png");
     public static final int RIBBON_W = 30;
+    // the first row below the bend over the cover, where a pulled ribbon gets longer
+    private static final int RIBBON_STRETCH_ROW = 11;
     private static final int SCRIBBLE_GAP_MS = 1500;
     private static long lastScribble;
 
@@ -59,12 +61,21 @@ public final class EJGui {
         image(ctx, PAGES[stage], x - ART_LEFT, y - ART_TOP, ART_W, ART_H);
     }
 
-    public static void redRibbon(GuiGraphics ctx, int x, int y) {
-        image(ctx, RIBBON_RED, x, y, 31, 29);
+    public static void redRibbon(GuiGraphics ctx, int x, int y, int pull) {
+        ribbon(ctx, RIBBON_RED, x, y, 29, pull);
     }
 
-    public static void blueRibbon(GuiGraphics ctx, int x, int y) {
-        image(ctx, RIBBON_BLUE, x, y, 31, 23);
+    public static void blueRibbon(GuiGraphics ctx, int x, int y, int pull) {
+        ribbon(ctx, RIBBON_BLUE, x, y, 23, pull);
+    }
+
+    /** A pulled ribbon slides out from under the pages: its bend over the cover stays put, and the part that hangs gets longer. */
+    private static void ribbon(GuiGraphics ctx, ResourceLocation tex, int x, int y, int h, int pull) {
+        RenderSystem.enableBlend();
+        ctx.blit(tex, x, y, 0, 0, 31, RIBBON_STRETCH_ROW + 1, 31, h);
+        for (int i = 1; i <= pull; i++) ctx.blit(tex, x, y + RIBBON_STRETCH_ROW + i, 0, RIBBON_STRETCH_ROW, 31, 1, 31, h);
+        ctx.blit(tex, x, y + RIBBON_STRETCH_ROW + 1 + pull, 0, RIBBON_STRETCH_ROW + 1, 31, h - RIBBON_STRETCH_ROW - 1, 31, h);
+        RenderSystem.disableBlend();
     }
 
     /** A cut paper tab, glued to a page edge. Only its end shows past the book, with its two outer corners snipped, like the slips. It slides out a little under the mouse. */

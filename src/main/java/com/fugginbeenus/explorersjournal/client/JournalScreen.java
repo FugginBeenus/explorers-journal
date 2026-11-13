@@ -373,9 +373,9 @@ public final class JournalScreen extends EJScreen {
         boolean marked = !journal.bookmark.isEmpty();
         if (marked || canWrite) {
             // it hangs out when it marks a page, and stays tucked in when it does not
-            EJGui.blueRibbon(ctx, bookX + 116, bookY + (marked ? 188 : 176) + (overBlueRibbon(mx, my) ? 2 : 0));
+            EJGui.blueRibbon(ctx, bookX + 116, bookY + (marked ? 188 : 176), overBlueRibbon(mx, my) ? 2 : 0);
         }
-        EJGui.redRibbon(ctx, bookX + 166, bookY + 188 + (overRedRibbon(mx, my) ? 2 : 0));
+        EJGui.redRibbon(ctx, bookX + 166, bookY + 188, overRedRibbon(mx, my) ? 2 : 0);
     }
 
     /** A village nobody has named, with a new name typed in its title: Location Tooltip can give it that name, for everyone. */
